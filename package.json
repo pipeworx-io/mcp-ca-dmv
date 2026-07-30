@@ -1,0 +1,20 @@
+{
+  "name": "@pipeworx/mcp-ca-dmv",
+  "version": "0.1.0",
+  "description": "California DMV: vehicle and EV registrations by ZIP, field offices, forms, insurer NAIC codes",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "pipeworx", "ca-dmv"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pipeworx-io/mcp-ca-dmv"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
