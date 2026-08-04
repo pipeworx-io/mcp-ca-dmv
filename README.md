@@ -4,6 +4,8 @@ California DMV data: registered vehicles and EV adoption by ZIP code, all 187 fi
 the services each performs, the official forms catalog, insurer NAIC codes, and licensed-driver
 counts by county. Keyless.
 
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1394+ live data sources.
+
 ## Why this is one state per pack
 
 Part of the `dmv` category — one pack per state motor-vehicle agency. The states do not share a
@@ -74,7 +76,7 @@ Add to your MCP client (Claude Desktop, Cursor, Windsurf, etc.):
 }
 ```
 
-Or connect to the full Pipeworx gateway for access to all 1392+ data sources:
+Or connect to the full Pipeworx gateway for access to all 1394+ data sources:
 
 ```json
 {
@@ -91,14 +93,14 @@ Or connect to the full Pipeworx gateway for access to all 1392+ data sources:
 Instead of calling tools directly, you can ask questions in plain English:
 
 ```
-ask_pipeworx({ question: "your question about California DMV data" })
+ask_pipeworx({ question: "your question about Ca Dmv data" })
 ```
 
 The gateway picks the right tool and fills the arguments automatically.
 
 ## More
 
-- [All tools and guides](https://github.com/pipeworx-io/examples)
+- [Docs and guides](https://pipeworx.io/docs)
 - [pipeworx.io](https://pipeworx.io)
 
 ## License
