@@ -317,7 +317,8 @@ function govJoinHours(parts: Array<[string, unknown]>): string | null {
  *
  * Sources (verified live 2026-07-29):
  *   data.ca.gov CKAN  — "Vehicle Fuel Type Count by Zip Code", one resource per annual
- *                       snapshot 2019–2026; "Driver Licenses Outstanding by County"
+ *                       snapshot 2019–2026; "Driver Licenses Outstanding by County" (an
+ *                       XLSX download since 2026-10-01, parsed in ./xlsx.ts)
  *   dmv.ca.gov WP REST — field offices (hours + per-office service tags), forms catalog,
  *                        insurance-carrier (NAIC) lookup
  *
@@ -325,6 +326,7 @@ function govJoinHours(parts: Array<[string, unknown]>): string | null {
  * comes back as { found: false, reason, hint }.
  */
 
+import { parseXlsx } from './xlsx.js';
 
 const UA = 'pipeworx-mcp-ca-dmv/1.0 (+https://pipeworx.io)';
 const CKAN_DOMAIN = 'data.ca.gov';
@@ -482,12 +484,12 @@ const tools: McpToolExport['tools'] = [
   {
     name: 'ca_dmv_driver_licenses',
     description:
-      'Count valid California driver licenses and identification cards held by residents of each county, as an annual series from 2008 onward. Answers "how many licensed drivers are in Los Angeles County", "which California county has the most driver licenses", or how a county\'s licensed-driver count has changed over time. Counts people holding a license or ID card, which is a different question from how many vehicles are registered — for that use ca_dmv_vehicle_registrations.',
+      'Count driver licenses outstanding in California by county of residence, as an annual series from 2008 onward, with the statewide total and the statewide count of DMV ID cards. Answers "how many licensed drivers are in Los Angeles County", "which California county has the most driver licenses", or how a county\'s licensed-driver count has changed over time. Counts people holding a license, which is a different question from how many vehicles are registered — for that use ca_dmv_vehicle_registrations.',
     inputSchema: {
       type: 'object',
       properties: {
         county: { type: 'string', description: 'County name, matched as a substring, e.g. "Los Angeles", "Alameda".' },
-        year: { type: 'string', description: 'Four-digit year between 2008 and 2024, e.g. "2024". Defaults to the most recent published.' },
+        year: { type: 'string', description: 'Four-digit year from 2008 to the latest published (2024 as of October 2026), e.g. "2024". Defaults to the most recent.' },
         limit: { type: ['number', 'string'], description: 'Max counties to return (default 30, max 60).' },
       },
     },
@@ -758,15 +760,99 @@ async function insuranceLookup(args: Record<string, unknown>): Promise<unknown> 
   };
 }
 
-async function driverLicenses(args: Record<string, unknown>): Promise<unknown> {
-  const records = await ckanRows<Record<string, unknown>>(CKAN_DOMAIN, DL_RESOURCE, 200, { userAgent: UA });
-  if (!records.length) {
-    return govNotFound('upstream_empty', 'California returned no driver-license rows; retry once.');
+/**
+ * "Driver Licenses Outstanding by County" lost its CKAN datastore on 2026-10-01 and is now
+ * only an 18 KB XLSX (fleet #3069), so datastore_search 404s deterministically. Resolve
+ * the file through resource_show on every cache miss rather than hard-coding its URL: the
+ * filename embeds the year range ("…-2008-2024.xlsx") and moves on each annual republish.
+ *
+ * Sheet layout (verified 2026-10-14): a title row, a header row "COUNTIES | 2024 | 2023 …",
+ * one row per county, then OUT OF STATE, TOTAL, and — below a blank row — a statewide
+ * "ID CARDS OUTSTANDING" line. The county rows are driver licenses only; ID cards are
+ * published statewide, never by county.
+ */
+interface DlTable {
+  years: string[];
+  counties: Array<{ county: string; counts: Record<string, number> }>;
+  outOfState: Record<string, number>;
+  total: Record<string, number>;
+  idCards: Record<string, number>;
+  fileUrl: string;
+  dataAsOf: string | null;
+}
+
+const DL_TTL_MS = 6 * 60 * 60 * 1000;
+let dlCache: { table: DlTable; fetchedAt: number } | null = null;
+
+/** Upstream misspells one county; agents will type it correctly. */
+const COUNTY_FIXES: Record<string, string> = { 'SANTA BARABARA': 'SANTA BARBARA' };
+
+async function loadDriverLicenseTable(): Promise<DlTable> {
+  if (dlCache && Date.now() - dlCache.fetchedAt < DL_TTL_MS) return dlCache.table;
+
+  const meta = await govFetchJson<{ result?: { url?: string; last_modified?: string | null; metadata_modified?: string | null } }>(
+    `https://${CKAN_DOMAIN}/api/3/action/resource_show?id=${DL_RESOURCE}`,
+    { userAgent: UA },
+  );
+  const fileUrl = meta.result?.url;
+  if (!fileUrl) throw new Error(`layout changed: resource ${DL_RESOURCE} has no download url`);
+  const res = await fetch(fileUrl, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`upstream ${res.status} fetching the driver-license workbook`);
+  const wb = await parseXlsx(new Uint8Array(await res.arrayBuffer()));
+  const sheet = wb.sheets[0];
+  if (!sheet) throw new Error('layout changed: driver-license workbook has no sheets');
+
+  // Header row = the row whose column A reads COUNTIES; every other column is a year.
+  let headerRow: number | null = null;
+  const yearByCol = new Map<string, string>();
+  for (const [rowNum, cells] of [...sheet.rows].sort((a, b) => a[0] - b[0])) {
+    if (String(cells.get('A') ?? '').trim().toUpperCase() !== 'COUNTIES') continue;
+    headerRow = rowNum;
+    for (const [col, v] of cells) if (/^\d{4}$/.test(String(v).trim())) yearByCol.set(col, String(v).trim());
+    break;
   }
-  // Columns are one per year plus COUNTIES; pick the requested year or the newest present.
-  const yearCols = Object.keys(records[0])
-    .filter((k) => /^\d{4}$/.test(k))
-    .sort((a, b) => Number(b) - Number(a));
+  if (headerRow === null || !yearByCol.size) {
+    throw new Error('layout changed: no "COUNTIES | <year> …" header row in the driver-license workbook');
+  }
+
+  const counts = (cells: Map<string, string | number>): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const [col, year] of yearByCol) {
+      const n = govNumber(cells.get(col));
+      if (n !== null) out[year] = n;
+    }
+    return out;
+  };
+
+  const table: DlTable = {
+    years: [...yearByCol.values()].sort((a, b) => Number(b) - Number(a)),
+    counties: [],
+    outOfState: {},
+    total: {},
+    idCards: {},
+    fileUrl,
+    dataAsOf: (meta.result?.last_modified ?? meta.result?.metadata_modified ?? null)?.slice(0, 10) ?? null,
+  };
+  for (const [rowNum, cells] of sheet.rows) {
+    if (rowNum <= headerRow) continue;
+    const label = String(cells.get('A') ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!label) continue;
+    if (label === 'TOTAL') table.total = counts(cells);
+    else if (label === 'OUT OF STATE') table.outOfState = counts(cells);
+    else if (label.startsWith('ID CARDS')) table.idCards = counts(cells);
+    else table.counties.push({ county: COUNTY_FIXES[label] ?? label, counts: counts(cells) });
+  }
+  // California has 58 counties; far fewer means the parse silently lost rows.
+  if (table.counties.length < 50) {
+    throw new Error(`layout changed: parsed only ${table.counties.length} county rows from the driver-license workbook`);
+  }
+  dlCache = { table, fetchedAt: Date.now() };
+  return table;
+}
+
+async function driverLicenses(args: Record<string, unknown>): Promise<unknown> {
+  const table = await loadDriverLicenseTable();
+  const yearCols = table.years;
   const requested = govString(args, 'year');
   if (requested && !yearCols.includes(requested)) {
     return govNotFound(
@@ -778,14 +864,11 @@ async function driverLicenses(args: Record<string, unknown>): Promise<unknown> {
   const year = requested ?? yearCols[0];
   const county = govString(args, 'county');
   const limit = govLimit(args.limit, 30, 60);
-  let rows = records
-    .map((r) => ({
-      county: String(r.COUNTIES ?? '').trim(),
-      licenses_and_ids: govNumber(r[year]),
-    }))
-    .filter((r) => r.county && r.licenses_and_ids !== null);
+  let rows = table.counties
+    .map((r) => ({ county: r.county, driver_licenses: r.counts[year] ?? null }))
+    .filter((r) => r.driver_licenses !== null);
   if (county) rows = rows.filter((r) => govContains(r.county, county));
-  rows.sort((a, b) => (b.licenses_and_ids ?? 0) - (a.licenses_and_ids ?? 0));
+  rows.sort((a, b) => (b.driver_licenses ?? 0) - (a.driver_licenses ?? 0));
   if (!rows.length) {
     return govNotFound(
       'no_matching_records',
@@ -795,12 +878,19 @@ async function driverLicenses(args: Record<string, unknown>): Promise<unknown> {
   }
   return {
     state: 'CA',
-    grain: `valid driver licenses and ID cards held by residents, by county, for ${year}`,
+    grain: `driver licenses outstanding, by county of residence, for ${year}`,
     as_of: year,
-    source: 'data.ca.gov — California DMV Driver Licenses Outstanding by County',
+    data_as_of: table.dataAsOf,
+    source: 'California DMV — Driver Licenses Outstanding by County (data.ca.gov)',
     available_years: yearCols,
+    statewide: {
+      driver_licenses_total: table.total[year] ?? null,
+      driver_licenses_out_of_state: table.outOfState[year] ?? null,
+      id_cards_outstanding: table.idCards[year] ?? null,
+    },
+    truncated: rows.length > limit,
     rows: rows.slice(0, limit),
-    note: 'Counts include people holding only an identification card as well as licence holders.',
+    note: 'County rows count driver licenses only. ID cards are published as one statewide figure (statewide.id_cards_outstanding), not by county. statewide.driver_licenses_total includes out-of-state addresses.',
   };
 }
 
@@ -822,7 +912,9 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
       error: `ca-dmv/${name}: ${message}`,
       hint: /timeout|abort/i.test(message)
         ? 'data.ca.gov timed out. Retry once, and lower `limit` or add a filter to reduce the work upstream.'
-        : 'data.ca.gov refused the request or changed shape. Retry once; if it persists the dataset may have been republished under a new resource id.',
+        : /upstream 404|layout changed/i.test(message)
+          ? 'Not transient: California moved or reshaped this dataset, so a retry returns the same error. Use another ca_dmv tool, or report it with pipeworx_feedback.'
+          : 'data.ca.gov refused the request (rate limit or outage). Retry once; if it persists the source is down.',
     };
   }
 }

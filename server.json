@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.pipeworx-io/ca-dmv",
   "title": "Ca Dmv",
-  "description": "California DMV MCP — registered vehicles and EV adoption by ZIP code, field offices,",
-  "version": "0.1.1",
+  "description": "California DMV MCP — registered vehicles and EV adoption by ZIP code, field offices, the official…",
+  "version": "0.1.2",
   "websiteUrl": "https://pipeworx.io/packs/ca-dmv",
   "repository": {
     "url": "https://github.com/pipeworx-io/mcp-ca-dmv",

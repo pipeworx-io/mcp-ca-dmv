@@ -4,7 +4,7 @@ California DMV data: registered vehicles and EV adoption by ZIP code, all 187 fi
 the services each performs, the official forms catalog, insurer NAIC codes, and licensed-driver
 counts by county. Keyless.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1679+ live data sources.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1800+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
 
 ## Why this is one state per pack
 
@@ -24,7 +24,7 @@ For every DMV tool in one connection, use `/mcp?vertical=dmv`.
 | `ca_dmv_offices` | All 187 field offices — address, per-day hours, coordinates, services performed |
 | `ca_dmv_forms` | Official DMV forms by topic, with REG/DL form numbers and download pages |
 | `ca_dmv_insurance_lookup` | Insurer NAIC codes by company name |
-| `ca_dmv_driver_licenses` | Valid licences and ID cards held, by county, annually from 2008 |
+| `ca_dmv_driver_licenses` | Driver licenses outstanding by county, annually from 2008, plus statewide totals and ID-card count |
 
 ## Auth
 
@@ -106,7 +106,7 @@ directly, instead of just this one's:
 }
 ```
 
-Both URLs reach the same gateway and the same 1679+ data sources. The
+Both URLs reach the same gateway and the same 1800+ data sources. The
 only difference is which pack's tools are listed **directly**; `ask_pipeworx`
 reaches all of them from either one.
 
