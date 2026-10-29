@@ -3,7 +3,7 @@
   "name": "io.github.pipeworx-io/ca-dmv",
   "title": "Ca Dmv",
   "description": "California DMV MCP — registered vehicles and EV adoption by ZIP code, field offices, the official…",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "websiteUrl": "https://pipeworx.io/packs/ca-dmv",
   "repository": {
     "url": "https://github.com/pipeworx-io/mcp-ca-dmv",
