@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-ca-dmv",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "California DMV MCP — registered vehicles and EV adoption by ZIP code, field offices, the official forms catalog, and insurer NAIC codes. Keyless.",
   "type": "module",
   "main": "lib/index.js",
@@ -27,7 +27,7 @@
     "mode": "gateway",
     "slug": "ca-dmv",
     "gatewaySlug": "ca-dmv",
-    "sourceHash": "v1-e401bb68013c10d41cddf0b3c126c58517cbe41ff65a131adac17bcd59dc75c7",
-    "sourceCommit": "4277282d72f9bf55e548b3799aaf737baf22152f"
+    "sourceHash": "v1-45aa6544d91dcab46b0cbaf88673ff9cb578a14b03960893be9c36d5f5b0aec8",
+    "sourceCommit": "547a3983b42dacf4389ca474860b0a1dee8e6053"
   }
 }
